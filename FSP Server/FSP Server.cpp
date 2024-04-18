@@ -1,5 +1,5 @@
 #include "FSP Server.h"
-#include "UdpClient.h"
+#include "UdpSocket.h"
 #include "winsock2.h"
 #include <iostream>
 #include <vector>
@@ -89,7 +89,7 @@ int main(int argumentCount, char* arguments[])
 		return EXIT_SUCCESS;
 	}
 
-	std::cout << "Starting server with passwort \"" << password << "\" in directory \"" << path.string() << "\"" << std::endl;
+	std::cout << "Starting server with password \"" << password << "\" in directory \"" << path.string() << "\"" << std::endl;
 
 	UdpSocket::basePath = path;
 	UdpSocket client = UdpSocket(ip, port, password);
@@ -105,7 +105,7 @@ void printHelp() {
 	std::cout << std::noskipws << "    -d, --directory:         Determines the directory in which the server should run." << std::endl;
 	std::cout << std::noskipws << "    -p, --password:          Sets a password that clients need to supply to access files. [Default: none]" << std::endl;
 	std::cout << std::noskipws << "    -a, --address:           Determines which address the socket should be bound to. [Default: 0:0.0:0:21]" << std::endl;
-	std::cout << std::noskipws << "    -i  -ignore-keys;        Determines whether or not FSP packet keys should be checked or not. [Default: 0]" << std::endl;
+	std::cout << std::noskipws << "    -i  -ignore-keys;        Determines whether or not FSP packet key validation should be skipped. [Default: 1]" << std::endl;
 	std::cout << std::noskipws << "    -v, --version:           Display version info." << std::endl;
 }
 

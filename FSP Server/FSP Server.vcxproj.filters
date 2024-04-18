@@ -18,7 +18,7 @@
     <ClCompile Include="FSP Server.cpp">
       <Filter>Quelldateien</Filter>
     </ClCompile>
-    <ClCompile Include="UdpClient.cpp">
+    <ClCompile Include="UdpSocket.cpp">
       <Filter>Quelldateien</Filter>
     </ClCompile>
     <ClCompile Include="FspPacket.cpp">
@@ -35,7 +35,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="UdpClient.h">
+    <ClInclude Include="UdpSocket.h">
       <Filter>Headerdateien</Filter>
     </ClInclude>
     <ClInclude Include="FspPacket.h">

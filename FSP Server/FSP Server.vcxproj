@@ -140,7 +140,7 @@
     <ClCompile Include="FspDirEnt.cpp" />
     <ClCompile Include="FspHelper.cpp" />
     <ClCompile Include="FspPacket.cpp" />
-    <ClCompile Include="UdpClient.cpp" />
+    <ClCompile Include="UdpSocket.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FSP Server.h" />
@@ -148,7 +148,7 @@
     <ClInclude Include="FspDirEnt.h" />
     <ClInclude Include="FspHelper.h" />
     <ClInclude Include="FspPacket.h" />
-    <ClInclude Include="UdpClient.h" />
+    <ClInclude Include="UdpSocket.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
