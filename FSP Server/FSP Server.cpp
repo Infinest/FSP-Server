@@ -10,7 +10,7 @@
 int main(int argumentCount, char* arguments[])
 {
 	// Seed rng
-	std::srand(std::time(nullptr));
+	std::srand((uint32_t)std::time(nullptr));
 
 	const std::vector<std::string> args(arguments + 1, arguments + argumentCount);
 	uint16_t port = 21;

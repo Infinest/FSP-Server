@@ -53,12 +53,11 @@ class FspPacket
 public:
 	static FspPacket createErrorPacket(FspClient fspClient, uint16_t sequence, std::string data, uint16_t errorCode = 0);
 
-	const int HEADER_SIZE = 12;
-	FspPacket(char message[], int packetLength);
+	FspPacket(std::vector<char> message);
 	FspPacket(FspHeader sentHeader, std::vector<uint8_t> sentData, std::vector<uint8_t> sentExtraData);
-	char* getRawBytes();
+	std::vector<char> getRawBytes();
 	FspPacket* process(FspClient& fspClient, std::string password);
-	char getChecksum(char message[], int packetLength);
+	char getChecksum(std::vector<char>& message);
 	int packetLength();
 
 	FspHeader header;
@@ -72,7 +71,7 @@ public:
 private:
 	Direction direction;
 
-	bool validateToServerChecksum(char message[], int packetLength);
+	bool validateToServerChecksum(std::vector<char>& message);
 	FspPacket* getDirectoryProtection(FspClient& fspClient);
 	FspPacket* getDirectory(FspClient& fspClient, std::string password);
 	FspPacket* fileStat(FspClient& fspClient, std::string password);

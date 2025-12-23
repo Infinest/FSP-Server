@@ -4,9 +4,10 @@
 #include <iostream>
 #include <vector>
 #include "FspHelper.h"
+#include <span>
 
 std::filesystem::path UdpSocket::basePath;
-char UdpSocket::messageBuffer[BUFLEN];
+std::vector<char> UdpSocket::messageBuffer(BUFLEN);
 
 UdpSocket::UdpSocket(uint32_t ipAddress, uint16_t port, std::string serverPassword)
 {
@@ -50,7 +51,8 @@ void UdpSocket::listen()
 {
 	// try to receive some data, this is a blocking call
 	int clientLength = sizeof(client);
-	int receivedBytes = recvfrom(wSocket, messageBuffer, BUFLEN, 0, (sockaddr*)&client, &clientLength);
+	messageBuffer.resize(BUFLEN);
+	int receivedBytes = recvfrom(wSocket, messageBuffer.data(), BUFLEN, 0, (sockaddr*)&client, &clientLength);
 
 	// todo change error message
 	if (receivedBytes == SOCKET_ERROR) {
@@ -64,13 +66,14 @@ void UdpSocket::listen()
 	if (0 < receivedBytes) {
 		try
 		{
-			FspPacket received = FspPacket(messageBuffer, receivedBytes);
+			messageBuffer.resize(receivedBytes);
+			FspPacket received = FspPacket(messageBuffer);
 			FspClient& fspClient = FspClient::getClient(client.sin_addr.s_addr, received.header.KEY);
 			FspPacket* responsePacket = received.process(fspClient, password);
 
 			if (responsePacket != nullptr) {
-				char* response = responsePacket->getRawBytes();
-				sendto(wSocket, response, responsePacket->packetLength(), 0, (sockaddr*)&client, clientLength);
+				std::vector<char> response = responsePacket->getRawBytes();
+				sendto(wSocket, response.data(), response.size(), 0, (sockaddr*)&client, clientLength);
 			}
 
 			FspClient::cleanUp();

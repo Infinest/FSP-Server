@@ -16,7 +16,7 @@ private:
 	sockaddr_in server;
 	sockaddr_in client;
 
-	static char messageBuffer[];
+	static std::vector<char> messageBuffer;
 public:
 	std::string password;
 

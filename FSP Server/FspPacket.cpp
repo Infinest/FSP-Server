@@ -8,6 +8,7 @@
 #include <iostream>
 #include <intrin.h>
 #include "FspDirEnt.h"
+#include <span>
 
 std::vector<std::vector<uint8_t>> FspPacket::directoryCache = {};
 std::filesystem::path FspPacket::lastListedPath = std::filesystem::path();
@@ -20,34 +21,36 @@ uint16_t FspPacket::lastGetFileBlockSize;
 std::ofstream FspPacket::lastUploadFileStream;
 std::filesystem::path FspPacket::lastUploadFile;
 
-FspPacket::FspPacket(char message[], int packetLength)
+FspPacket::FspPacket(std::vector<char> message)
 {
 	direction = Direction::TO_SERVER;
 
-	if (packetLength < HEADER_SIZE) {
+	if (message.size() < sizeof(FspHeader)) {
 		throw std::invalid_argument("Message length is too small");
 	}
 
-	if (!validateToServerChecksum(message, packetLength)) {
+	if (!validateToServerChecksum(message)) {
 		throw std::invalid_argument("Invalid checksum encountered");
 	}
 
-	header = *((FspHeader*)message);
+	std::memcpy(&header, message.data(), sizeof(FspHeader));
 	header.KEY = _byteswap_ushort(header.KEY);
 	header.SEQUENCE = _byteswap_ushort(header.SEQUENCE);
 	header.DATA_LENGTH = _byteswap_ushort(header.DATA_LENGTH);
 	header.FILE_POSITION = _byteswap_ulong(header.FILE_POSITION);
 
 	if (0 < header.DATA_LENGTH) {
-		if ((packetLength - HEADER_SIZE) < header.DATA_LENGTH) {
+		if ((message.size() - sizeof(header)) < header.DATA_LENGTH) {
 			throw std::invalid_argument("Data length is too big");
 		}
 
-		data.insert(data.end(), &message[HEADER_SIZE], &message[HEADER_SIZE + header.DATA_LENGTH]);
+		auto payload = std::span<const char>(message).subspan(sizeof(header), header.DATA_LENGTH);
+		data.assign(payload.begin(), payload.end());
 	}
-
-	if (HEADER_SIZE + header.DATA_LENGTH < packetLength) {
-		extraData.insert(extraData.end(), &message[HEADER_SIZE + header.DATA_LENGTH], &message[packetLength]);
+	
+	if (sizeof(header) + header.DATA_LENGTH < message.size()) {
+		auto extra = std::span<const char>(message).subspan(sizeof(header) + header.DATA_LENGTH);
+		extraData.assign(extra.begin(), extra.end());
 	}
 }
 
@@ -58,11 +61,11 @@ FspPacket::FspPacket(FspHeader sentHeader, std::vector<uint8_t> sentData, std::v
 	data = sentData;
 	extraData = sentExtraData;
 
-	char* raw = getRawBytes();
-	header.MESSAGE_CHECKSUM = getChecksum(raw, packetLength());
+	std::vector<char> rawBytes = getRawBytes();
+	header.MESSAGE_CHECKSUM = getChecksum(rawBytes);
 }
 
-char* FspPacket::getRawBytes()
+std::vector<char> FspPacket::getRawBytes()
 {
 	FspHeader temp = header;
 	temp.KEY = _byteswap_ushort(header.KEY);
@@ -71,12 +74,12 @@ char* FspPacket::getRawBytes()
 	temp.FILE_POSITION = _byteswap_ulong(header.FILE_POSITION);
 
 	int len = packetLength();
-	char* rawPacket = new char[len];
-	memcpy(&(rawPacket[0]), &temp, sizeof(temp));
-	memcpy(&(rawPacket[HEADER_SIZE]), data.data(), data.size());
-	memcpy(&(rawPacket[HEADER_SIZE + data.size()]), extraData.data(), extraData.size());
+	std::vector<char> rawPacket = std::vector<char>(len);
+	std::memcpy(rawPacket.data(), &temp, sizeof(temp));
+	std::memcpy(rawPacket.data() + sizeof(header), data.data(), data.size());
+	std::memcpy(rawPacket.data() + sizeof(header) + data.size(), extraData.data(), extraData.size());
 
-	return (char*)rawPacket;
+	return rawPacket;
 }
 
 FspPacket* FspPacket::process(FspClient& fspClient, std::string password)
@@ -117,35 +120,34 @@ FspPacket* FspPacket::process(FspClient& fspClient, std::string password)
 	return NULL;
 }
 
-char FspPacket::getChecksum(char message[], int packetLength)
+char FspPacket::getChecksum(std::vector<char>& message)
 {
-	char* checksumBytes = new char[packetLength];
-	memcpy(checksumBytes, message, packetLength);
-
-	checksumBytes[1] = 0;
-	uint32_t actual = 0;
-
-	if (direction == Direction::TO_SERVER) {
-		actual = packetLength;
+	if (message.size() < sizeof(FspHeader)) {
+		return 0;
 	}
 
-	for (int i = 0; i < packetLength; i++)
-	{
-		uint8_t byte = *checksumBytes++;
+	uint32_t actual = 0;
+	if (direction == Direction::TO_SERVER) {
+		actual = static_cast<uint32_t>(message.size());
+	}
+
+	for (size_t i = 0; i < message.size(); ++i) {
+		uint8_t byte = (i == 1) ? 0 : static_cast<uint8_t>(message[i]);
 		actual += byte;
 	}
+
 	actual += actual >> 8;
-	return actual & 0xFF;
+	return static_cast<char>(actual & 0xFF);
 }
 
 int FspPacket::packetLength()
 {
-	return (HEADER_SIZE + data.size() + extraData.size());
+	return (sizeof(header) + data.size() + extraData.size());
 }
 
-bool FspPacket::validateToServerChecksum(char message[], int packetLength)
+bool FspPacket::validateToServerChecksum(std::vector<char>& message)
 {
-	char expected = getChecksum(message, packetLength);
+	char expected = getChecksum(message);
 	char actual = message[1];
 
 	return actual == expected;
@@ -562,8 +564,12 @@ FspPacket* FspPacket::rename(FspClient& fspClient, std::string password) {
 		}
 		else
 		{
-			auto pathWithoutName = renamePath;
-			std::filesystem::create_directories(pathWithoutName.remove_filename());
+			auto pathWithoutName = renamePath.parent_path();
+			std::filesystem::create_directories(pathWithoutName);
+			if (std::filesystem::equivalent(pathWithoutName, lastListedPath))
+			{
+				lastListedPath = std::filesystem::path();
+			}
 		}
 
 		std::filesystem::rename(path, renamePath);
