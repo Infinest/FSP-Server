@@ -47,7 +47,7 @@ FspPacket::FspPacket(std::vector<char> message)
 		auto payload = std::span<const char>(message).subspan(sizeof(header), header.DATA_LENGTH);
 		data.assign(payload.begin(), payload.end());
 	}
-	
+
 	if (sizeof(header) + header.DATA_LENGTH < message.size()) {
 		auto extra = std::span<const char>(message).subspan(sizeof(header) + header.DATA_LENGTH);
 		extraData.assign(extra.begin(), extra.end());
