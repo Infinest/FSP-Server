@@ -51,12 +51,12 @@ class FspPacket
 	};
 
 public:
-	static FspPacket createErrorPacket(FspClient fspClient, uint16_t sequence, std::string data, uint16_t errorCode = 0);
+	static std::unique_ptr<FspPacket> createErrorPacket(FspClient fspClient, uint16_t sequence, std::string data, uint16_t errorCode = 0);
 
 	FspPacket(std::vector<char> message);
 	FspPacket(FspHeader sentHeader, std::vector<uint8_t> sentData, std::vector<uint8_t> sentExtraData);
 	std::vector<char> getRawBytes();
-	FspPacket* process(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> process(FspClient& fspClient, std::string password);
 	char getChecksum(std::vector<char>& message);
 	int packetLength();
 
@@ -72,17 +72,17 @@ private:
 	Direction direction;
 
 	bool validateToServerChecksum(std::vector<char>& message);
-	FspPacket* getDirectoryProtection(FspClient& fspClient);
-	FspPacket* getDirectory(FspClient& fspClient, std::string password);
-	FspPacket* fileStat(FspClient& fspClient, std::string password);
-	FspPacket* getFile(FspClient& fspClient, std::string password);
-	FspPacket* rename(FspClient& fspClient, std::string password);
-	FspPacket* makeDirectory(FspClient& fspClient, std::string password);
-	FspPacket* uploadFile(FspClient& fspClient, std::string password);
-	FspPacket* completeUploadFile(FspClient& fspClient, std::string password);
-	FspPacket* deleteFile(FspClient& fspClient, std::string password);
-	FspPacket* deleteDirectory(FspClient& fspClient, std::string password);
-	FspPacket* closeSession(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> getDirectoryProtection(FspClient& fspClient);
+	std::unique_ptr<FspPacket> getDirectory(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> fileStat(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> getFile(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> rename(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> makeDirectory(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> uploadFile(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> completeUploadFile(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> deleteFile(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> deleteDirectory(FspClient& fspClient, std::string password);
+	std::unique_ptr<FspPacket> closeSession(FspClient& fspClient, std::string password);
 
 	// Cache data for getDirectory()
 	static uint16_t lastListedPathBlockSize;

@@ -26,7 +26,7 @@ UdpSocket::UdpSocket(uint32_t ipAddress, uint16_t port, std::string serverPasswo
 	//ioctlsocket(wSocket, FIONBIO, &mode);
 
 	server.sin_family = AF_INET;
-	server.sin_addr.s_addr = INADDR_ANY;
+	server.sin_addr.s_addr = ipAddress;
 	server.sin_port = htons(port);
 
 	if (bind(wSocket, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR) {
@@ -69,7 +69,7 @@ void UdpSocket::listen()
 			messageBuffer.resize(receivedBytes);
 			FspPacket received = FspPacket(messageBuffer);
 			FspClient& fspClient = FspClient::getClient(client.sin_addr.s_addr, received.header.KEY);
-			FspPacket* responsePacket = received.process(fspClient, password);
+			auto responsePacket = received.process(fspClient, password);
 
 			if (responsePacket != nullptr) {
 				std::vector<char> response = responsePacket->getRawBytes();
@@ -78,7 +78,7 @@ void UdpSocket::listen()
 
 			FspClient::cleanUp();
 		}
-		catch (std::exception e)
+		catch (const std::exception& e)
 		{
 			std::cout << "Error: " << e.what() << std::endl;
 		}

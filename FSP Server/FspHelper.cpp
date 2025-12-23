@@ -63,7 +63,7 @@ boolean FspHelper::checkPath(std::filesystem::path base, std::filesystem::path a
 	return true;
 }
 
-FspPacket* FspHelper::validatePassword(std::string expected, std::string actual, FspClient fspClient, uint16_t sequence)
+std::unique_ptr<FspPacket> FspHelper::validatePassword(std::string expected, std::string actual, FspClient fspClient, uint16_t sequence)
 {
 	if (expected.length() == 0) {
 		return nullptr;
@@ -86,7 +86,7 @@ FspPacket* FspHelper::validatePassword(std::string expected, std::string actual,
 		return nullptr;
 	}
 
-	return new FspPacket(FspPacket::createErrorPacket(fspClient, sequence, "Invalid password"));
+	return FspPacket::createErrorPacket(fspClient, sequence, "Invalid password");
 }
 
 uint32_t FspHelper::fileTimeTypeToUnix(std::filesystem::file_time_type fileTime)

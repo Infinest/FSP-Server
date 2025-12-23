@@ -82,7 +82,7 @@ std::vector<char> FspPacket::getRawBytes()
 	return rawPacket;
 }
 
-FspPacket* FspPacket::process(FspClient& fspClient, std::string password)
+std::unique_ptr<FspPacket> FspPacket::process(FspClient& fspClient, std::string password)
 {
 	if (direction == Direction::FROM_SERVER) {
 		throw std::invalid_argument("Packet has not been received from a client");
@@ -117,7 +117,7 @@ FspPacket* FspPacket::process(FspClient& fspClient, std::string password)
 		break;
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 char FspPacket::getChecksum(std::vector<char>& message)
@@ -154,7 +154,7 @@ bool FspPacket::validateToServerChecksum(std::vector<char>& message)
 }
 
 
-FspPacket* FspPacket::getDirectoryProtection(FspClient& fspClient)
+std::unique_ptr<FspPacket> FspPacket::getDirectoryProtection(FspClient& fspClient)
 {
 	std::vector<uint8_t> sentData = {};
 	std::vector<uint8_t> sentExtraData = {
@@ -167,15 +167,15 @@ FspPacket* FspPacket::getDirectoryProtection(FspClient& fspClient)
 	h.DATA_LENGTH = sentData.size();
 	h.FILE_POSITION = sentExtraData.size();
 
-	return new FspPacket(h, sentData, sentExtraData);
+	return std::make_unique<FspPacket>(h, sentData, sentExtraData);
 }
 
-FspPacket* FspPacket::getDirectory(FspClient& fspClient, std::string password)
+std::unique_ptr<FspPacket> FspPacket::getDirectory(FspClient& fspClient, std::string password)
 {
 	std::string givenPassword;
 	std::string subPath = FspHelper::getSubPath(data, givenPassword);
 
-	FspPacket* error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
+	auto error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
 	if (error != nullptr) {
 		return error;
 	}
@@ -201,9 +201,9 @@ FspPacket* FspPacket::getDirectory(FspClient& fspClient, std::string password)
 	{
 		path = FspHelper::getCompletePath(subPath, { std::filesystem::file_type::directory });
 	}
-	catch (const std::exception& e)
+	catch (const std::exception&)
 	{
-		return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Bad path"));
+		return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Bad path");
 	}
 
 	if (lastListedPath != path || lastListedPathBlockSize != blockSize) {
@@ -269,19 +269,19 @@ FspPacket* FspPacket::getDirectory(FspClient& fspClient, std::string password)
 	uint16_t key = std::floor(header.FILE_POSITION / blockSize);
 	if (directoryCache.size() - 1 < key) {
 		h.DATA_LENGTH = 0;
-		return new FspPacket(h, {}, {});
+		return std::make_unique<FspPacket>(h, std::vector<uint8_t>{}, std::vector<uint8_t>{});
 	}
 
 	h.DATA_LENGTH = directoryCache[key].size();
-	return new FspPacket(h, directoryCache[key], {});
+	return std::make_unique<FspPacket>(h, directoryCache[key], std::vector<uint8_t>{});
 }
 
-FspPacket* FspPacket::fileStat(FspClient& fspClient, std::string password)
+std::unique_ptr<FspPacket> FspPacket::fileStat(FspClient& fspClient, std::string password)
 {
 	std::string givenPassword;
 	std::string subPath = FspHelper::getSubPath(data, givenPassword);
 
-	FspPacket* error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
+	auto error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
 	if (error != nullptr) {
 		return error;
 	}
@@ -300,20 +300,20 @@ FspPacket* FspPacket::fileStat(FspClient& fspClient, std::string password)
 	catch (const std::exception&)
 	{
 		FspDirEnt end = FspDirEnt::getEndEntry(0);
-		return new FspPacket(h, end.getRawBytes(false), {});
+		return std::make_unique<FspPacket>(h, end.getRawBytes(false), std::vector<uint8_t>{});
 	}
 
 	std::filesystem::directory_entry e(path);
 	FspDirEnt fspDirEnt(e);
 
-	return new FspPacket(h, fspDirEnt.getRawBytes(false), {});
+	return std::make_unique<FspPacket>(h, fspDirEnt.getRawBytes(false), std::vector<uint8_t>{});
 }
 
-FspPacket* FspPacket::deleteDirectory(FspClient& fspClient, std::string password) {
+std::unique_ptr<FspPacket> FspPacket::deleteDirectory(FspClient& fspClient, std::string password) {
 	std::string givenPassword;
 	std::string subPath = FspHelper::getSubPath(data, givenPassword);
 
-	FspPacket* error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
+	auto error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
 	if (error != nullptr) {
 		return error;
 	}
@@ -325,22 +325,26 @@ FspPacket* FspPacket::deleteDirectory(FspClient& fspClient, std::string password
 	}
 	catch (const std::exception&)
 	{
-		return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Delete directory failed"));
+		return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Delete directory failed");
 	}
 
 	try
 	{
 		if (std::filesystem::is_directory(path)) {
-			std::filesystem::remove_all(path);
-			if (!std::filesystem::remove(path))
+			if (!std::filesystem::remove_all(path))
 			{
 				throw std::exception("Directory could not be deleted");
+			}
+
+			if (std::filesystem::is_directory(lastListedPath) && std::filesystem::equivalent(path, lastListedPath))
+			{
+				lastListedPath = std::filesystem::path();
 			}
 		}
 	}
 	catch (const std::exception&)
 	{
-		return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Delete directory failed"));
+		return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Delete directory failed");
 	}
 
 	FspHeader h = header;
@@ -349,14 +353,14 @@ FspPacket* FspPacket::deleteDirectory(FspClient& fspClient, std::string password
 	h.FILE_POSITION = 0;
 	h.MESSAGE_CHECKSUM = 0;
 
-	return new FspPacket(h, {}, {});
+	return std::make_unique<FspPacket>(h, std::vector<uint8_t>{}, std::vector<uint8_t>{});
 }
 
-FspPacket* FspPacket::deleteFile(FspClient& fspClient, std::string password) {
+std::unique_ptr<FspPacket> FspPacket::deleteFile(FspClient& fspClient, std::string password) {
 	std::string givenPassword;
 	std::string subPath = FspHelper::getSubPath(data, givenPassword);
 
-	FspPacket* error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
+	auto error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
 	if (error != nullptr) {
 		return error;
 	}
@@ -368,7 +372,7 @@ FspPacket* FspPacket::deleteFile(FspClient& fspClient, std::string password) {
 	}
 	catch (const std::exception&)
 	{
-		return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Delete file failed"));
+		return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Delete file failed");
 	}
 
 	try
@@ -378,11 +382,17 @@ FspPacket* FspPacket::deleteFile(FspClient& fspClient, std::string password) {
 			{
 				throw std::exception("File could not be deleted");
 			}
+
+			auto pathWithoutName = path.parent_path();
+			if (std::filesystem::is_directory(lastListedPath) && std::filesystem::equivalent(pathWithoutName, lastListedPath))
+			{
+				lastListedPath = std::filesystem::path();
+			}
 		}
 	}
 	catch (const std::exception&)
 	{
-		return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Delete file failed"));
+		return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Delete file failed");
 	}
 
 	FspHeader h = header;
@@ -391,15 +401,15 @@ FspPacket* FspPacket::deleteFile(FspClient& fspClient, std::string password) {
 	h.FILE_POSITION = 0;
 	h.MESSAGE_CHECKSUM = 0;
 
-	return new FspPacket(h, {}, {});
+	return std::make_unique<FspPacket>(h, std::vector<uint8_t>{}, std::vector<uint8_t>{});
 }
 
-FspPacket* FspPacket::getFile(FspClient& fspClient, std::string password)
+std::unique_ptr<FspPacket> FspPacket::getFile(FspClient& fspClient, std::string password)
 {
 	std::string givenPassword;
 	std::string subPath = FspHelper::getSubPath(data, givenPassword);
 
-	FspPacket* error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
+	auto error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
 	if (error != nullptr) {
 		return error;
 	}
@@ -428,7 +438,7 @@ FspPacket* FspPacket::getFile(FspClient& fspClient, std::string password)
 	catch (const std::exception&)
 	{
 		h.DATA_LENGTH = 0;
-		return new FspPacket(h, {}, {});
+		return std::make_unique<FspPacket>(h, std::vector<uint8_t>{}, std::vector<uint8_t>{});
 	}
 
 	if (lastGetFile != path || lastGetFileBlockSize != blockSize || !lastGetFileStream.is_open() || !lastGetFileStream.good()) {
@@ -441,7 +451,7 @@ FspPacket* FspPacket::getFile(FspClient& fspClient, std::string password)
 		lastGetFileStream = std::ifstream(path, std::ios::binary);
 		if (!lastGetFileStream.good()) {
 			h.DATA_LENGTH = 0;
-			return new FspPacket(h, {}, {});
+			return std::make_unique<FspPacket>(h, std::vector<uint8_t>{}, std::vector<uint8_t>{});
 		}
 	}
 
@@ -452,15 +462,14 @@ FspPacket* FspPacket::getFile(FspClient& fspClient, std::string password)
 	bytes.resize(h.DATA_LENGTH);
 	lastGetFileStream.seekg(h.FILE_POSITION);
 	lastGetFileStream.read((char*)bytes.data(), h.DATA_LENGTH);
-
-	return new FspPacket(h, bytes, {});
+	return std::make_unique<FspPacket>(h, bytes, std::vector<uint8_t>{});
 }
 
-FspPacket* FspPacket::completeUploadFile(FspClient& fspClient, std::string password) {
+std::unique_ptr<FspPacket> FspPacket::completeUploadFile(FspClient& fspClient, std::string password) {
 	std::string givenPassword;
 	std::string subPath = FspHelper::getSubPath(data, givenPassword);
 
-	FspPacket* error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
+	auto error = FspHelper::validatePassword(password, givenPassword, fspClient, header.SEQUENCE);
 	if (error != nullptr) {
 		return error;
 	}
@@ -480,7 +489,7 @@ FspPacket* FspPacket::completeUploadFile(FspClient& fspClient, std::string passw
 		}
 		catch (const std::exception&)
 		{
-			return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Install failed"));
+			return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Install failed");
 		}
 	}
 
@@ -489,9 +498,9 @@ FspPacket* FspPacket::completeUploadFile(FspClient& fspClient, std::string passw
 	{
 		targetPath = FspHelper::getCompletePath(subPath, { std::filesystem::file_type::not_found, std::filesystem::file_type::regular });
 	}
-	catch (const std::exception& e)
+	catch (const std::exception&)
 	{
-		return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Install failed"));
+		return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Install failed");
 	}
 
 	try
@@ -506,15 +515,15 @@ FspPacket* FspPacket::completeUploadFile(FspClient& fspClient, std::string passw
 		std::filesystem::create_directories(directory);
 		std::filesystem::rename(sourcePath, targetPath);
 	}
-	catch (const std::exception& e)
+	catch (const std::exception&)
 	{
-		return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Install failed"));
+		return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Install failed");
 	}
 
-	return new FspPacket(h, {}, {});
+	return std::make_unique<FspPacket>(h, std::vector<uint8_t>{}, std::vector<uint8_t>{});
 }
 
-FspPacket* FspPacket::uploadFile(FspClient& fspClient, std::string password) {
+std::unique_ptr<FspPacket> FspPacket::uploadFile(FspClient& fspClient, std::string password) {
 	std::filesystem::path path = fspClient.getTempFilePath();
 
 	if (lastUploadFile != path || !lastUploadFileStream.is_open() || !lastUploadFileStream.good()) {
@@ -525,7 +534,7 @@ FspPacket* FspPacket::uploadFile(FspClient& fspClient, std::string password) {
 		lastUploadFile = path;
 		lastUploadFileStream = std::ofstream(path, std::ios::binary);
 		if (!lastUploadFileStream.good()) {
-			return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Upload failed"));
+			return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Upload failed");
 		}
 	}
 
@@ -535,7 +544,7 @@ FspPacket* FspPacket::uploadFile(FspClient& fspClient, std::string password) {
 		lastUploadFileStream.write((char*)data.data(), data.size());
 	}
 	catch (const std::exception&) {
-		return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Upload failed"));
+		return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Upload failed");
 	}
 
 	FspHeader h = header;
@@ -543,10 +552,10 @@ FspPacket* FspPacket::uploadFile(FspClient& fspClient, std::string password) {
 	h.MESSAGE_CHECKSUM = 0;
 	h.DATA_LENGTH = 0;
 
-	return new FspPacket(h, {}, {});
+	return std::make_unique<FspPacket>(h, std::vector<uint8_t>{}, std::vector<uint8_t>{});
 }
 
-FspPacket* FspPacket::rename(FspClient& fspClient, std::string password) {
+std::unique_ptr<FspPacket> FspPacket::rename(FspClient& fspClient, std::string password) {
 	std::string givenPassword;
 	std::string subPath = FspHelper::getSubPath(data, givenPassword);
 	std::string givenRenamePassword;
@@ -566,7 +575,7 @@ FspPacket* FspPacket::rename(FspClient& fspClient, std::string password) {
 		{
 			auto pathWithoutName = renamePath.parent_path();
 			std::filesystem::create_directories(pathWithoutName);
-			if (std::filesystem::equivalent(pathWithoutName, lastListedPath))
+			if (std::filesystem::is_directory(lastListedPath) && std::filesystem::equivalent(pathWithoutName, lastListedPath))
 			{
 				lastListedPath = std::filesystem::path();
 			}
@@ -581,10 +590,10 @@ FspPacket* FspPacket::rename(FspClient& fspClient, std::string password) {
 	h.FILE_POSITION = 0;
 	h.DATA_LENGTH = 0;
 	h.MESSAGE_CHECKSUM = 0;
-	return new FspPacket(h, {}, {});
+	return std::make_unique<FspPacket>(h, std::vector<uint8_t>{}, std::vector<uint8_t>{});
 }
 
-FspPacket* FspPacket::makeDirectory(FspClient& fspClient, std::string password) {
+std::unique_ptr<FspPacket> FspPacket::makeDirectory(FspClient& fspClient, std::string password) {
 	std::string givenPassword;
 	std::string subPath = FspHelper::getSubPath(data, givenPassword);
 	std::filesystem::path path;
@@ -595,7 +604,7 @@ FspPacket* FspPacket::makeDirectory(FspClient& fspClient, std::string password) 
 	}
 	catch (const std::exception&)
 	{
-		return new FspPacket(FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Could not create directory"));
+		return FspPacket::createErrorPacket(fspClient, header.SEQUENCE, "Could not create directory");
 	}
 
 	std::vector<uint8_t> sentData = {};
@@ -609,20 +618,20 @@ FspPacket* FspPacket::makeDirectory(FspClient& fspClient, std::string password) 
 	h.DATA_LENGTH = sentData.size();
 	h.FILE_POSITION = sentExtraData.size();
 
-	return new FspPacket(h, sentData, sentExtraData);
+	return std::make_unique<FspPacket>(h, sentData, sentExtraData);
 }
 
-FspPacket* FspPacket::closeSession(FspClient& fspClient, std::string password) {
+std::unique_ptr<FspPacket> FspPacket::closeSession(FspClient& fspClient, std::string password) {
 	fspClient.deleted = true;
 	FspHeader h = header;
 	h.KEY = fspClient.key;
 	h.FILE_POSITION = 0;
 	h.DATA_LENGTH = 0;
 	h.MESSAGE_CHECKSUM = 0;
-	return new FspPacket(h, {}, {});
+	return std::make_unique<FspPacket>(h, std::vector<uint8_t>{}, std::vector<uint8_t>{});
 }
 
-FspPacket FspPacket::createErrorPacket(FspClient fspClient, uint16_t sequence, std::string data, uint16_t errorCode)
+std::unique_ptr<FspPacket> FspPacket::createErrorPacket(FspClient fspClient, uint16_t sequence, std::string data, uint16_t errorCode)
 {
 	std::vector<uint8_t> sentData(data.begin(), data.end());
 	sentData.push_back(0x0);
@@ -638,5 +647,5 @@ FspPacket FspPacket::createErrorPacket(FspClient fspClient, uint16_t sequence, s
 	h.DATA_LENGTH = sentData.size();
 	h.FILE_POSITION = sentExtraData.size();
 
-	return FspPacket(h, sentData, sentExtraData);
+	return std::make_unique<FspPacket>(h, sentData, sentExtraData);
 }
